@@ -96,7 +96,7 @@ EOF
 docker run -i -p18443:18443 --expose=18443 -v $(pwd)/tmp:/var/tmp -t rootfs /bin/bash -c "(cd /rootfs; tar cf /var/tmp/rootfs.tar *; xz -f /var/tmp/rootfs.tar) > /var/log/rootfs-pkg.log 2>/var/log/rootfs-pkg.err; cp /var/log/*.{log,err} /var/tmp"
 DATE="$(date +"%Y%m%d%H%M%S")"
 
-# point this script to the latest rootfs we created. 
+# point this script to the latest rootfs we created.
 rm -f tmp/chroot-work
 mv tmp/rootfs.tar.xz rootfs.tar.xz-${DATE}
 unlink rootfs.tar.xz; ln -s rootfs.tar.xz-${DATE} rootfs.tar.xz

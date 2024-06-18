@@ -71,7 +71,7 @@ apt-get update && apt-get --no-install-recommends install -y locales dialog loca
 cp /etc/locale.gen /etc/locale.gen-dist
 echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
 locale-gen
-apt-get install -y gzip vim
+# apt-get install -y gzip vim
 apt-get autoremove -y
 apt-get clean
 apt-get autoclean

@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+HERE="$(cd $(dirname ${BASH_SOURCE[0]}); pwd)"
+[ -d ${HERE}/tmp ] && mkdir -p ${HERE}/tmp && TEMP="${HERE}/tmp" || TEMP="/tmp"
+TEMPDIR=$(mktemp -d ${TEMP}/$(basename ${BASH_SOURCE[0]}).XXXX)
+rm -f ${HERE}/tmp/*.{log,err}
+
+################################################################################
+cleanup() {
+  [ -d "${TEMPDIR}" ] && rm -rf "${TEMPDIR}"
+}
+trap cleanup EXIT
+
+urldecode() {
+    # urldecode <string>
+    local url_encoded="${1//+/ }"
+    printf '%b' "${url_encoded//%/\\x}"
+}
+export -f urldecode
+################################################################################
+#
+while [ ! -z "$*" ];do
+  case "$1" in
+     "--uri"|"--url")
+     FILE_URI="$2"
+     shift 2;
+     ;;
+     *)
+       echo "Unknown Option $1"
+       shift 1
+     ;;
+  esac
+done
+#
+################################################################################
+
+cd ${HERE}
+FILE_BASE="$(echo "${FILE_URI}" | sed 's/.*\///' )"
+DECODED_FILE_BASE="$(urldecode "${FILE_BASE}")"
+# Clean up any old image
+docker image list | grep rootfs | awk '{print $3}' | grep -v IMAGE | xargs docker image rm -f
+
+# Get our root filesystem:
+[ -f ${HERE}/rootfs.tar.xz ] || wget -O "${HERE}/rootfs.tar.xz-not-mine" "https://github.com/debuerreotype/docker-debian-artifacts/raw/8d227a7d1f698c702d82e7de764ed0a7df65fb7c/bookworm/rootfs.tar.xz"
+ln -s rootfs.tar.xz-not-mine rootfs.tar.xz
+
+cat<<EOCW > tmp/chroot-work
+#!/bin/bash
+export LANG=C
+/debootstrap/debootstrap --second-stage
+cat <<EOT > /etc/apt/sources.list
+deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+deb-src http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+EOT
+apt-get update && apt-get install -y locales dialog
+cp /etc/locale.gen /etc/locale.gen-dist
+echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+locale-gen
+apt-get install -y gzip vim
+apt-get clean
+echo rootfs > /etc/hostname
+exit 0
+EOCW
+chmod 755 tmp/chroot-work
+
+cat << EOF | docker build --no-cache --progress=plain -t rootfs -f - "${HERE}"
+FROM scratch
+ADD rootfs.tar.xz /
+ADD tmp/chroot-work /chroot-work
+RUN apt-get update                                                          \
+ && apt-get install -y apt-file binfmt-support dialog debootstrap file git locales net-tools vim wget xz-utils \
+ && apt-file update                                                         \
+ && mkdir /rootfs && debootstrap --arch=amd64 --foreign bookworm /rootfs && cp /etc/resolv.conf /rootfs/etc/resolv.conf && touch /rootfs/debootstrap/mirror \
+ && cp /chroot-work /rootfs/chroot-work \
+ && chroot /rootfs /chroot-work > /var/log/chroot-work.log 2> /var/log/chroot-work.err
+CMD ["bash"]
+EXPOSE 18443
+EOF
+docker run -i -p18443:18443 --expose=18443 -v $(pwd)/tmp:/var/tmp -t rootfs /bin/bash -c "(cd /rootfs; tar cf /var/tmp/rootfs.tar *; xz -f /var/tmp/rootfs.tar) > /var/log/rootfs-pkg.log 2>/var/log/rootfs-pkg.err; cp /var/log/*.{log,err} /var/tmp"
+DATE="$(date +"%Y%m%d%H%M%S")"
+
+# point this script to the latest rootfs we created. 
+rm -f tmp/chroot-work
+mv tmp/rootfs.tar.xz rootfs.tar.xz-${DATE}
+unlink rootfs.tar.xz; ln -s rootfs.tar.xz-${DATE} rootfs.tar.xz
+
+#  docker exec -it "$(docker ps | grep rootfs | awk '{print $1}')" /bin/bash

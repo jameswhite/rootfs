@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 HERE="$(cd $(dirname ${BASH_SOURCE[0]}); pwd)"
-[ -d ${HERE}/tmp ] && mkdir -p ${HERE}/tmp && TEMP="${HERE}/tmp" || TEMP="/tmp"
+[ -d ${HERE}/tmp ] || mkdir -p ${HERE}/tmp
+[ -d ${HERE}/tmp ] && TEMP="${HERE}/tmp" || TEMP="/tmp"
 TEMPDIR=$(mktemp -d ${TEMP}/$(basename ${BASH_SOURCE[0]}).XXXX)
 rm -f ${HERE}/tmp/*.{log,err}
 
@@ -39,9 +40,8 @@ DECODED_FILE_BASE="$(urldecode "${FILE_BASE}")"
 # Clean up any old image
 docker image list | grep rootfs | awk '{print $3}' | grep -v IMAGE | xargs docker image rm -f
 
-# Get our root filesystem:
-[ -f ${HERE}/rootfs.tar.xz ] || wget -O "${HERE}/rootfs.tar.xz-not-mine" "https://github.com/debuerreotype/docker-debian-artifacts/raw/8d227a7d1f698c702d82e7de764ed0a7df65fb7c/bookworm/rootfs.tar.xz"
-ln -s rootfs.tar.xz-not-mine rootfs.tar.xz
+# Get our root filesystem if we don't have one):
+[ -f ${HERE}/rootfs.tar.xz ] || wget -O "${HERE}/rootfs.tar.xz-not-mine" "https://github.com/debuerreotype/docker-debian-artifacts/raw/8d227a7d1f698c702d82e7de764ed0a7df65fb7c/bookworm/rootfs.tar.xz" && ln -s rootfs.tar.xz-not-mine rootfs.tar.xz
 
 cat<<EOCW > tmp/chroot-work
 #!/bin/bash
@@ -53,12 +53,28 @@ deb-src http://deb.debian.org/debian bookworm main contrib non-free non-free-fir
 deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
 deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
 EOT
-apt-get update && apt-get install -y locales dialog
+cat<<EOD > /etc/dpkg/dpkg.cfg.d/01_nodoc
+path-exclude /usr/share/doc/*
+# we need to keep copyright files for legal reasons
+path-include /usr/share/doc/*/copyright
+path-exclude /usr/share/man/*
+path-exclude /usr/share/groff/*
+path-exclude /usr/share/info/*
+# lintian stuff is small, but really unnecessary
+path-exclude /usr/share/lintian/*
+path-exclude /usr/share/linda/*
+EOD
+echo "APT::Install-Recommends "false";" >> /etc/apt/apt.conf.d/99nodocs
+
+apt-get update && apt-get --no-install-recommends install -y locales dialog localepurge
+
 cp /etc/locale.gen /etc/locale.gen-dist
 echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
 locale-gen
 apt-get install -y gzip vim
+apt-get autoremove -y
 apt-get clean
+apt-get autoclean
 echo rootfs > /etc/hostname
 exit 0
 EOCW
@@ -69,9 +85,9 @@ FROM scratch
 ADD rootfs.tar.xz /
 ADD tmp/chroot-work /chroot-work
 RUN apt-get update                                                          \
- && apt-get install -y apt-file binfmt-support dialog debootstrap file git locales net-tools vim wget xz-utils \
+ && apt-get install -y --no-install-recommends apt-file binfmt-support dialog debootstrap file git locales net-tools vim wget xz-utils \
  && apt-file update                                                         \
- && mkdir /rootfs && debootstrap --arch=amd64 --foreign bookworm /rootfs && cp /etc/resolv.conf /rootfs/etc/resolv.conf && touch /rootfs/debootstrap/mirror \
+ && mkdir /rootfs && debootstrap --variant=minbase --arch=amd64 --foreign bookworm /rootfs && cp /etc/resolv.conf /rootfs/etc/resolv.conf && touch /rootfs/debootstrap/mirror \
  && cp /chroot-work /rootfs/chroot-work \
  && chroot /rootfs /chroot-work > /var/log/chroot-work.log 2> /var/log/chroot-work.err
 CMD ["bash"]

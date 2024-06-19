@@ -71,11 +71,28 @@ apt-get update && apt-get --no-install-recommends install -y locales dialog loca
 cp /etc/locale.gen /etc/locale.gen-dist
 echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
 locale-gen
-# apt-get install -y gzip vim
-apt-get autoremove -y
+echo rootfs > /etc/hostname
+
+#
+# The rest of this just tries to make the image smaller...
+#
+
+apt-get -y install localepurge deborphan debfoster
+apt-get -y remove aptitude aptitude-common dmidecode groff-base info install-info manpages man-db tasksel tasksel-data vim-common vim-tiny wget whiptail
+dpkg --purge man-db manpages
+deborphan --guess-all
+apt-get autoremove -y --purge
 apt-get clean
 apt-get autoclean
-echo rootfs > /etc/hostname
+
+rm -rf /usr/share/i18n/charmaps/*
+rm -rf /usr/share/i18n/locales/*
+rm -rf /usr/share/locale/*
+rm -rf /usr/share/man/*
+rm -rf /usr/share/doc/*
+rm -rf /usr/share/doc-base/*
+rm -rf /var/lib/apt/lists/*
+
 exit 0
 EOCW
 chmod 755 tmp/chroot-work

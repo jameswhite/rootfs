@@ -41,7 +41,7 @@ DECODED_FILE_BASE="$(urldecode "${FILE_BASE}")"
 docker image list | grep rootfs | awk '{print $3}' | grep -v IMAGE | xargs docker image rm -f
 
 # Get our root filesystem if we don't have one):
-[ -f ${HERE}/rootfs.tar.xz ] || wget -O "${HERE}/rootfs.tar.xz-not-mine" "https://github.com/debuerreotype/docker-debian-artifacts/raw/8d227a7d1f698c702d82e7de764ed0a7df65fb7c/bookworm/rootfs.tar.xz" && ln -s rootfs.tar.xz-not-mine rootfs.tar.xz
+[ -f ${HERE}/rootfs.tar.xz ] || curl "https://raw.githubusercontent.com/jameswhite/rootfs/main/$(curl https://raw.githubusercontent.com/jameswhite/rootfs/main/rootfs.tar.xz)" > rootfs.tar.xz
 
 cat<<EOCW > tmp/chroot-work
 #!/bin/bash

@@ -45,13 +45,21 @@ docker image list | grep rootfs | awk '{print $3}' | grep -v IMAGE | xargs docke
 
 cat<<EOCW > tmp/chroot-work
 #!/bin/bash
+
+TEMPDIR=$(mktemp -d ${TEMP}/$(basename ${BASH_SOURCE[0]}).XXXX)
+cleanup() {
+  [ -d "${TEMPDIR}" ] && rm -rf "${TEMPDIR}"
+  exit 0
+}
+trap cleanup EXIT
+
 export LANG=C
 /debootstrap/debootstrap --second-stage
 cat <<EOT > /etc/apt/sources.list
 deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-deb-src http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
-deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+# deb-src http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+# deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+# deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
 EOT
 cat<<EOD > /etc/dpkg/dpkg.cfg.d/01_nodoc
 path-exclude /usr/share/doc/*

@@ -45,13 +45,21 @@ docker image list | grep rootfs | awk '{print $3}' | grep -v IMAGE | xargs docke
 
 cat<<EOCW > tmp/chroot-work
 #!/bin/bash
+
+TEMPDIR=$(mktemp -d ${TEMP}/$(basename ${BASH_SOURCE[0]}).XXXX)
+cleanup() {
+  [ -d "${TEMPDIR}" ] && rm -rf "${TEMPDIR}"
+  exit 0
+}
+trap cleanup EXIT
+
 export LANG=C
 /debootstrap/debootstrap --second-stage
 cat <<EOT > /etc/apt/sources.list
 deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-deb-src http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
-deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+# deb-src http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+# deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+# deb-src http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
 EOT
 cat<<EOD > /etc/dpkg/dpkg.cfg.d/01_nodoc
 path-exclude /usr/share/doc/*
@@ -101,7 +109,8 @@ cat << EOF | docker build --no-cache --progress=plain -t rootfs -f - "${HERE}"
 FROM scratch
 ADD rootfs.tar.xz /
 ADD tmp/chroot-work /chroot-work
-RUN apt-get update                                                          \
+RUN apt-get update --allow-unauthenticated --allow-insecure-repositories \
+ && apt-get dist-upgrade -y \
  && apt-get install -y --no-install-recommends apt-file binfmt-support dialog debootstrap file git locales net-tools vim wget xz-utils \
  && apt-file update                                                         \
  && mkdir /rootfs && debootstrap --variant=minbase --arch=amd64 --foreign bookworm /rootfs && cp /etc/resolv.conf /rootfs/etc/resolv.conf && touch /rootfs/debootstrap/mirror \
@@ -111,11 +120,14 @@ CMD ["bash"]
 EXPOSE 18443
 EOF
 docker run -i -p18443:18443 --expose=18443 -v $(pwd)/tmp:/var/tmp -t rootfs /bin/bash -c "(cd /rootfs; tar cf /var/tmp/rootfs.tar *; xz -f /var/tmp/rootfs.tar) > /var/log/rootfs-pkg.log 2>/var/log/rootfs-pkg.err; cp /var/log/*.{log,err} /var/tmp"
+DOCKEREXIT=$?
 DATE="$(date +"%Y%m%d%H%M%S")"
 
 # point this script to the latest rootfs we created.
 rm -f tmp/chroot-work
-mv tmp/rootfs.tar.xz rootfs.tar.xz-${DATE}
-unlink rootfs.tar.xz; ln -s rootfs.tar.xz-${DATE} rootfs.tar.xz
+if [ ${DOCKEREXIT} ]; then
+  mv tmp/rootfs.tar.xz rootfs.tar.xz-${DATE}
+  unlink rootfs.tar.xz; ln -s rootfs.tar.xz-${DATE} rootfs.tar.xz
+fi
 
 #  docker exec -it "$(docker ps | grep rootfs | awk '{print $1}')" /bin/bash
